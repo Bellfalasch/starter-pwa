@@ -1,20 +1,79 @@
 <script type="text/javascript">
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker
-        .register('{{baseUrl}}/sw.js', {scope: '{{appUrl}}'})
-        .then(function(reg) {
-            reg.onupdatefound = function() {
-                notifyAboutNewVersion();
-            };
-            console.log('Service Worker registered with scope '  + reg.scope);
-        }, function() {
-            console.log('Service Worker registration failure.');
-        });
+    window.addEventListener('load', function() {
+        navigator.serviceWorker
+            .register('{{baseUrl}}/sw.js', {scope: '{{appUrl}}'})
+            .then(function (registration) {
+                // Track updates to the Service Worker.
+                if (!navigator.serviceWorker.controller) {
+                    // The window client isn't currently controlled so it's a new service
+                    // worker that will activate immediately
+                    return;
+                }
+
+                // When the user asks to refresh the UI, we'll need to reload the window
+                var preventDevToolsReloadLoop;
+                navigator.serviceWorker.addEventListener('controllerchange', function (event) {
+                    // Ensure refresh is only called once.
+                    // This works around a bug in "force update on reload".
+                    if (preventDevToolsReloadLoop) return;
+                    preventDevToolsReloadLoop = true;
+                    console.log('Controller loaded');
+                    window.location.reload();
+                });
+
+                onNewServiceWorker(registration, function () {
+                    showNotification(registration);
+                });
+                console.log('Service Worker registered with scope ' + registration.scope);
+            }, function () {
+                console.log('Service Worker registration failure.');
+            });
+    });
 }
 
-function showNotification() {
-    var snackbarContainer = document.querySelector('#notification-bar');
-    var data = {message: '{{title}} upgraded to the latest version'};
+function onNewServiceWorker(registration, callback) {
+    if (registration.waiting) {
+        // SW is waiting to activate. Can occur if multiple clients open and
+        // one of the clients is refreshed.
+        return callback();
+    }
+
+    function listenInstalledStateChange() {
+        registration.installing.addEventListener('statechange', function(event) {
+            if (event.target.state === 'installed') {
+                // A new service worker is available, inform the user
+                callback();
+            }
+        });
+    };
+
+    if (registration.installing) {
+        return listenInstalledStateChange();
+    }
+
+    // We are currently controlled so a new SW may be found...
+    // Add a listener in case a new SW is found,
+    registration.addEventListener('updatefound', listenInstalledStateChange);
+}
+
+function showNotification(registration) {
+    const snackbarContainer = document.querySelector('#notification-bar');
+    const handler = function() {
+        if (!registration.waiting) {
+            // Just to ensure registration.waiting is available before
+            // calling postMessage()
+            return;
+        }
+
+        registration.waiting.postMessage('skipWaiting');
+    };
+
+    const data = {
+        message: 'New version of {{title}} is available',
+        actionHandler: handler,
+        actionText: 'Update'
+    };
     if (snackbarContainer.MaterialSnackbar) {
         snackbarContainer.MaterialSnackbar.showSnackbar(data);
     }
@@ -28,8 +87,7 @@ function notifyAboutNewVersion() {
 
     // Let's check whether notification permissions have already been granted
     if (Notification.permission === "granted") {
-        // If it's okay let's create a notification
-        // showNotification();
+        return;
     }
 
     // Otherwise, we need to ask the user for permission

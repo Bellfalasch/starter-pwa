@@ -8,7 +8,7 @@ workbox.core.setCacheNameDetails({
 });
 
 workbox.clientsClaim();
-workbox.skipWaiting();
+//workbox.skipWaiting();
 
 const serviceUrl = '{{serviceUrl}}';
 const indexDbName = { Todolist: 'Todolist' };
@@ -33,6 +33,24 @@ workbox.precaching.precacheAndRoute([{
  * Sets the caching strategy for the client: tries contacting the network first
  */
 workbox.routing.setDefaultHandler(workbox.strategies.networkFirst());
+
+/**
+ * Pass a message from the outside world to SW
+*/
+self.addEventListener('message', (event) => {
+    if (!event.data){
+        return;
+    }
+
+    switch (event.data) {
+        case 'skipWaiting':
+            self.skipWaiting();
+            break;
+        default:
+            // NOOP
+            break;
+    }
+});
 
 /**
  * Handles the event of receiving of a subscribed push notification
